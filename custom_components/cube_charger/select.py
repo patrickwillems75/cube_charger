@@ -9,7 +9,11 @@ class CubeIdTagSelect(SelectEntity):
         self._attr_name = "Cube: idTag"
         self._attr_unique_id = "cube_idtag"
         self._attr_options = options
-        self._attr_current_option = options[0]
+        self._attr_current_option = options[0] if options else None
+
+    @property
+    def available(self) -> bool:
+        return bool(self.options)
 
     async def async_select_option(self, option: str) -> None:
         self._attr_current_option = option
@@ -18,5 +22,5 @@ class CubeIdTagSelect(SelectEntity):
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities):
     data = hass.data[DOMAIN][entry.entry_id]
     idmap = data["idtag_map"]
-    options = [f"{k} ({v})" for k, v in idmap.items()] or ["RFID123456 (voorbeeld)"]
+    options = [f"{k} ({v})" for k, v in idmap.items()]
     async_add_entities([CubeIdTagSelect(options)])

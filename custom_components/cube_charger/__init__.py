@@ -6,10 +6,16 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.helpers.storage import Store
 from homeassistant.helpers.event import async_track_time_interval
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from .api import CubeApi
 from .coordinator import CubeCoordinator
 
-PLATFORMS: list[Platform] = [Platform.SENSOR, Platform.SELECT]
+PLATFORMS: list[Platform] = [
+    Platform.SENSOR,
+    Platform.BINARY_SENSOR,
+    Platform.SELECT,
+    Platform.NUMBER,
+]
 DOMAIN = "cube_charger"
 STORE_VERSION = 1
 STORE_KEY = "cube_history_state"
@@ -24,7 +30,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         get("base_url", "https://portal.cubecharging.com"),
         get("bearer_token"),
         get("verify_ssl", True),
-        int(get("request_timeout", 20)),
+        int(get("request_timeout", 60)),
+        async_get_clientsession(hass, verify_ssl=get("verify_ssl", True)),
     )
     coord = CubeCoordinator(hass, api, int(get("poll_interval", 30)))
     await coord.async_config_entry_first_refresh()
@@ -60,10 +67,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         if not chargebox_id:
             data = hass.data[DOMAIN][entry.entry_id]
             cids = list((data["coord"].data or {}).keys())
-            chargebox_id = cids[0] if cids else None
-        sel = hass.states.get("select.cube_idtag")
+            chargebox_id = cids[0] if len(cids) == 1 else None
+        if not chargebox_id:
+            raise ValueError("chargebox_id is required or must be auto-detectable")
+        sel = hass.states.get("select.cube_idtag") or hass.states.get("select.cube_charger_idtag")
         if not idtag and sel and sel.state:
             idtag = sel.state.split(" ")[0]
+        if not idtag or idtag in ("unknown", "unavailable"):
+            raise ValueError("Start requires a configured Cube RFID/idTag")
         await api.remote_start(chargebox_id, int(connector_id), idtag)
 
     async def svc_stop(call):
@@ -71,7 +82,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         if not chargebox_id:
             data = hass.data[DOMAIN][entry.entry_id]
             cids = list((data["coord"].data or {}).keys())
-            chargebox_id = cids[0] if cids else None
+            chargebox_id = cids[0] if len(cids) == 1 else None
+        if not chargebox_id:
+            raise ValueError("chargebox_id is required or must be auto-detectable")
 
         transaction_id = call.data.get("transaction_id")
         connector_id = call.data.get("connector_id")
@@ -128,12 +141,31 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         if not chargebox_id:
             data = hass.data[DOMAIN][entry.entry_id]
             cids = list((data["coord"].data or {}).keys())
-            chargebox_id = cids[0] if cids else None
+            chargebox_id = cids[0] if len(cids) == 1 else None
         if not chargebox_id:
             raise ValueError("chargebox_id is required or must be auto-detectable")
         await api.reset_chargebox(chargebox_id, reset_type)
 
     hass.services.async_register(DOMAIN, "reset_chargebox", svc_reset_chargebox)
+
+    async def svc_set_max_current(call):
+        chargebox_id = call.data.get("chargebox_id")
+        max_current = int(call.data["max_current"])
+        data = hass.data[DOMAIN][entry.entry_id]
+        if not chargebox_id:
+            cids = list((data["coord"].data or {}).keys())
+            chargebox_id = cids[0] if len(cids) == 1 else None
+        if not chargebox_id:
+            raise ValueError("chargebox_id is required or must be auto-detectable")
+        response = await api.set_max_total_current(chargebox_id, max_current)
+        if not response.get("success") or response.get("status") != "Accepted":
+            raise ValueError(response.get("message") or "Cube rejected the maximum current")
+        box = (data["coord"].data or {}).get(chargebox_id)
+        if box is not None:
+            box["maximumSystemCurrent"] = int(response.get("maxCurrent", max_current))
+            data["coord"].async_set_updated_data(data["coord"].data)
+
+    hass.services.async_register(DOMAIN, "set_max_current", svc_set_max_current)
 
     async def _aggregate_history(now):
         await _update_history_aggregates(hass, entry.entry_id)

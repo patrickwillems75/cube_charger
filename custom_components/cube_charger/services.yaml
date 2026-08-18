@@ -124,3 +124,26 @@ reset_chargebox:
               value: Hard
             - label: Soft (graceful reset)
               value: Soft
+
+set_max_current:
+  name: Set maximum charging current
+  description: Set the Cube IKL L-limit through the official public API (10-32 A). Automatic load balancing remains active and may reduce actual current further.
+  fields:
+    chargebox_id:
+      name: ChargeBox ID
+      description: The charge box ID (optional when exactly one box is available).
+      example: NL-1IC-XXXXXXX
+      required: false
+      selector:
+        text:
+    max_current:
+      name: Maximum current
+      description: Maximum permitted charging current in amperes.
+      example: 16
+      required: true
+      selector:
+        number:
+          min: 10
+          max: 32
+          step: 1
+          mode: slider
