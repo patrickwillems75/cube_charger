@@ -1,4 +1,29 @@
 
+read_history:
+  name: Read finished sessions
+  description: Read up to 31 days and 1000 finished sessions through the configured Cube API. Returns individual sessions, including unknown vehicles. Does not change totals, history storage or the charger.
+  fields:
+    start:
+      name: Window start with timezone offset
+      required: true
+      selector:
+        text:
+    end:
+      name: Window end with timezone offset
+      required: true
+      selector:
+        text:
+    config_entry_id:
+      name: Configuration entry ID
+      required: true
+      selector:
+        text:
+    charge_box_id:
+      name: Configured charge point ID
+      required: true
+      selector:
+        text:
+
 start_session:
   name: Start charging session
   description: Start a charging session on a charger with an optional idTag and connector override.

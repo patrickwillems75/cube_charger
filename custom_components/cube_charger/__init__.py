@@ -1,7 +1,9 @@
 
 from __future__ import annotations
+import voluptuous as vol
 from datetime import datetime, timedelta, timezone
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, SupportsResponse
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.helpers.storage import Store
@@ -9,6 +11,7 @@ from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from .api import CubeApi
 from .coordinator import CubeCoordinator
+from .history_read import HistoryReadError, read_history
 
 PLATFORMS: list[Platform] = [
     Platform.SENSOR,
@@ -19,6 +22,26 @@ PLATFORMS: list[Platform] = [
 DOMAIN = "cube_charger"
 STORE_VERSION = 1
 STORE_KEY = "cube_history_state"
+
+async def async_setup(hass: HomeAssistant, config) -> bool:
+    """Register the response-only action even when a config entry is unavailable."""
+    async def svc_read_history(call):
+        try:
+            return await read_history(hass.data.get(DOMAIN, {}), dict(call.data))
+        except HistoryReadError as err:
+            raise HomeAssistantError(str(err)) from None
+
+    hass.services.async_register(
+        DOMAIN, "read_history", svc_read_history,
+        schema=vol.Schema({
+            vol.Required("config_entry_id"): str,
+            vol.Required("charge_box_id"): str,
+            vol.Required("start"): str,
+            vol.Required("end"): str,
+        }),
+        supports_response=SupportsResponse.ONLY,
+    )
+    return True
 
 async def _async_update_listener(hass: HomeAssistant, entry: ConfigEntry):
     await hass.config_entries.async_reload(entry.entry_id)

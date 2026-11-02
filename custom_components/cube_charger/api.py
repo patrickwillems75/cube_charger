@@ -121,6 +121,17 @@ class CubeApi:
         data = await self._json_request("GET", url, params=params)
         return data if isinstance(data, list) else []
 
+    async def read_history_page(self, start_iso: str, end_iso: str, chargebox_id: str, offset: int, limit: int) -> list[dict[str, Any]]:
+        """Strict read path: a malformed response must never mean zero sessions."""
+        url = f"{self.base_url}/api/v1/CubeCharging/chargebox/transactions/history"
+        data = await self._json_request("GET", url, params={
+            "startDate": start_iso, "endDate": end_iso, "chargeBoxId": chargebox_id,
+            "offset": offset, "limit": limit,
+        })
+        if not isinstance(data, list):
+            raise ValueError("INVALID_HISTORY_PAGE")
+        return data
+
     async def reset_chargebox(self, chargebox_id: str, reset_type: str) -> dict[str, Any]:
         """Reset a charge box. reset_type should be 'Hard' or 'Soft'."""
         if reset_type not in ["Hard", "Soft"]:
